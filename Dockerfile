@@ -8,8 +8,8 @@ RUN CGO_ENABLED=0 go build -ldflags="-X main.version=${VERSION}" -o /bin/mcp-cve
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata && \
-    addgroup -S mcp && adduser -S -G mcp mcp
+    addgroup -S -g 101 mcp && adduser -S -G mcp -u 100 mcp
 COPY --from=builder /bin/mcp-cve /bin/mcp-cve
-USER mcp
+USER 100:101
 EXPOSE 8080
 ENTRYPOINT ["/bin/mcp-cve"]
