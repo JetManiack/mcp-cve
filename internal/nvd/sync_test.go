@@ -3,8 +3,10 @@ package nvd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -234,6 +236,51 @@ func TestMatchWatches_NoMatchNoNotify(t *testing.T) {
 	}
 	if notified {
 		t.Error("notifier should not be called when no CPE matches the watch")
+	}
+}
+
+func TestRunInitialLoad_ResumesFromCheckpoint(t *testing.T) {
+	// Two-page load. First run fetches only page 1, then "crashes". Second run
+	// must skip page 1 (startIndex=2) and fetch only page 2.
+	page1 := PageResult{TotalResults: 4, StartIndex: 0, ResultsPerPage: 2,
+		Vulnerabilities: []CVEItem{minimalCVEItem("CVE-2024-R001"), minimalCVEItem("CVE-2024-R002")}}
+	page2 := PageResult{TotalResults: 4, StartIndex: 2, ResultsPerPage: 2,
+		Vulnerabilities: []CVEItem{minimalCVEItem("CVE-2024-R003"), minimalCVEItem("CVE-2024-R004")}}
+
+	var calls []int // records which startIndex values were requested
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		si := 0
+		if s := r.URL.Query().Get("startIndex"); s != "" {
+			fmt.Sscanf(s, "%d", &si)
+		}
+		mu.Lock()
+		calls = append(calls, si)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if si == 0 {
+			json.NewEncoder(w).Encode(page1)
+		} else {
+			json.NewEncoder(w).Encode(page2)
+		}
+	}))
+	defer srv.Close()
+
+	db := testutil.NewTestDB(t)
+	client := newTestClient(srv.URL)
+
+	// Simulate a partial run: pre-seed FullLoadProgress=2 (page 1 already done).
+	db.Exec("INSERT INTO sync_states (id, full_load_progress) VALUES (1, 2)")
+
+	syncer := NewSyncer(db, client, nil)
+	if err := syncer.RunInitialLoad(context.Background()); err != nil {
+		t.Fatalf("RunInitialLoad: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 1 || calls[0] != 2 {
+		t.Errorf("expected exactly one request with startIndex=2, got %v", calls)
 	}
 }
 

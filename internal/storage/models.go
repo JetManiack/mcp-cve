@@ -103,5 +103,9 @@ type SyncState struct {
 	LastFullSync        *time.Time `json:"last_full_sync"`
 	LastIncrementalSync *time.Time `json:"last_incremental_sync"`
 	TotalCVEs           int        `gorm:"column:total_cves" json:"total_cves"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	// FullLoadProgress holds the NVD startIndex of the next page to fetch
+	// during an in-progress initial load. Zero means not started or completed.
+	// Persisted after each page so the load can resume after a pod restart.
+	FullLoadProgress int `gorm:"column:full_load_progress" json:"full_load_progress"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }

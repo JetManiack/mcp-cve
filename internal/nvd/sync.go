@@ -32,7 +32,8 @@ func NewSyncer(db *gorm.DB, client *Client, notifier WatchNotifier) *Syncer {
 
 // RunInitialLoad performs a full load of all CVEs from NVD if no full sync
 // has been done yet. It is idempotent: calling it again after a successful
-// full sync is a no-op.
+// full sync is a no-op. If a previous run was interrupted, it resumes from
+// the last saved checkpoint (SyncState.FullLoadProgress).
 func (s *Syncer) RunInitialLoad(ctx context.Context) error {
 	state, err := storage.GetSyncState(s.db)
 	if err != nil {
@@ -43,16 +44,22 @@ func (s *Syncer) RunInitialLoad(ctx context.Context) error {
 		return nil
 	}
 
-	slog.Info("starting NVD initial full load")
+	startFrom := state.FullLoadProgress
+	if startFrom > 0 {
+		slog.Info("resuming NVD full load from checkpoint", "startIndex", startFrom)
+	} else {
+		slog.Info("starting NVD initial full load")
+	}
 	start := time.Now()
 
-	total, ingested, err := s.loadAllPages(ctx)
+	total, ingested, err := s.loadAllPages(ctx, state, startFrom)
 	if err != nil {
 		return err
 	}
 
 	now := time.Now()
 	state.LastFullSync = &now
+	state.FullLoadProgress = 0
 	count, _ := storage.CountCVEs(s.db)
 	state.TotalCVEs = int(count)
 	if err := storage.UpsertSyncState(s.db, state); err != nil {
@@ -64,10 +71,12 @@ func (s *Syncer) RunInitialLoad(ctx context.Context) error {
 	return nil
 }
 
-// loadAllPages iterates through all NVD pages using startIndex-based
-// pagination. Returns (totalResults, ingested, error).
-func (s *Syncer) loadAllPages(ctx context.Context) (int, int, error) {
-	startIndex := 0
+// loadAllPages iterates through all NVD pages starting at startFrom. It
+// persists SyncState.FullLoadProgress after each page so the load can resume
+// after a pod restart without re-fetching already-ingested pages.
+// Returns (totalResults, ingested, error).
+func (s *Syncer) loadAllPages(ctx context.Context, state *storage.SyncState, startFrom int) (int, int, error) {
+	startIndex := startFrom
 	total := -1
 	ingested := 0
 
@@ -93,6 +102,13 @@ func (s *Syncer) loadAllPages(ctx context.Context) (int, int, error) {
 		ingested += n
 
 		startIndex += len(page.Vulnerabilities)
+
+		// Persist the checkpoint so a restart resumes here, not from zero.
+		state.FullLoadProgress = startIndex
+		if err := storage.UpsertSyncState(s.db, state); err != nil {
+			slog.Warn("failed to save full load progress", "startIndex", startIndex, "error", err)
+		}
+
 		slog.Info("NVD full load progress", "done", startIndex, "total", total)
 
 		if startIndex >= page.TotalResults || len(page.Vulnerabilities) == 0 {
