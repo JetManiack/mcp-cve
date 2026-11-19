@@ -215,21 +215,55 @@ func (s *Syncer) ingestPage(ctx context.Context, page *PageResult) (int, error) 
 // matchWatches checks cve against all active watches and creates CVEWatchHit
 // rows for any matches, then notifies subscribers.
 func (s *Syncer) matchWatches(ctx context.Context, cve *storage.CVE, watches []storage.CVEWatch) {
-	cpesLower := strings.ToLower(cve.CPEs)
+	if len(watches) == 0 {
+		return
+	}
+	cpeVPs := cpeVendorProducts(cve.CPEs)
 	notified := make(map[string]bool)
 
 	for _, watch := range watches {
-		if strings.Contains(cpesLower, strings.ToLower(watch.VendorProduct)) {
-			if err := storage.RecordWatchHit(s.db, watch.ID, cve.ID); err != nil {
-				slog.Warn("failed to record watch hit", "watch_id", watch.ID, "cve_id", cve.ID, "error", err)
-				continue
-			}
-			if s.notifier != nil && !notified[watch.ActorID] {
-				notified[watch.ActorID] = true
-				s.notifier(ctx, watch.ActorID)
+		// Skip CVEs published before the watch was created — they are
+		// historical and would create noise during the initial NVD load.
+		if cve.Published.Before(watch.CreatedAt) {
+			continue
+		}
+		q := strings.ToLower(watch.VendorProduct)
+		matched := false
+		for _, vp := range cpeVPs {
+			if strings.Contains(vp, q) {
+				matched = true
+				break
 			}
 		}
+		if !matched {
+			continue
+		}
+		if err := storage.RecordWatchHit(s.db, watch.ID, cve.ID); err != nil {
+			slog.Warn("failed to record watch hit", "watch_id", watch.ID, "cve_id", cve.ID, "error", err)
+			continue
+		}
+		if s.notifier != nil && !notified[watch.ActorID] {
+			notified[watch.ActorID] = true
+			s.notifier(ctx, watch.ActorID)
+		}
 	}
+}
+
+// cpeVendorProducts extracts lowercased "vendor product" strings (space-
+// separated) from a space-separated CPE list. Only CPE vendor (field index 3)
+// and product (field index 4) are included; version, platform and other
+// trailing components are excluded so substring matching stays scoped to
+// actual vendor/product values.
+func cpeVendorProducts(cpes string) []string {
+	fields := strings.Fields(cpes)
+	out := make([]string, 0, len(fields))
+	for _, cpe := range fields {
+		parts := strings.SplitN(cpe, ":", 7)
+		if len(parts) >= 5 {
+			out = append(out, strings.ToLower(parts[3]+" "+parts[4]))
+		}
+	}
+	return out
 }
 
 // convertCVEItem converts an NVD API CVEItem to a storage.CVE.

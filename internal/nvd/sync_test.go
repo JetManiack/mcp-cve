@@ -175,11 +175,11 @@ func TestMatchWatches_NotifiesOnCPEMatch(t *testing.T) {
 		notified = append(notified, actorID)
 	})
 
-	// Create a watch for openssl
+	// Create a watch BEFORE the CVE's published date so it fires.
 	db.Exec("INSERT INTO actors (id, display_name, kind, created_at) VALUES (?, ?, ?, datetime('now'))",
 		"actor-1", "Test Agent", "agent")
-	db.Exec("INSERT INTO cve_watches (id, actor_id, vendor_product, created_at) VALUES (?, ?, ?, datetime('now'))",
-		"watch-1", "actor-1", "openssl")
+	db.Exec("INSERT INTO cve_watches (id, actor_id, vendor_product, created_at) VALUES (?, ?, ?, ?)",
+		"watch-1", "actor-1", "openssl", "2023-01-01T00:00:00Z")
 
 	if err := syncer.RunInitialLoad(context.Background()); err != nil {
 		t.Fatalf("RunInitialLoad: %v", err)
@@ -239,4 +239,70 @@ func TestMatchWatches_NoMatchNoNotify(t *testing.T) {
 
 func svrWithSinglePage(item CVEItem) *httptest.Server {
 	return srvWithPages([]PageResult{buildPageResult([]CVEItem{item})})
+}
+
+func TestMatchWatches_SkipsHistoricalCVEs(t *testing.T) {
+	cveItem := minimalCVEItem("CVE-2024-55555") // published 2024-01-01
+	cveItem.CVE.Configurations = []struct {
+		Nodes []struct {
+			CPEMatch []struct {
+				Criteria string `json:"criteria"`
+			} `json:"cpeMatch"`
+		} `json:"nodes"`
+	}{{Nodes: []struct {
+		CPEMatch []struct {
+			Criteria string `json:"criteria"`
+		} `json:"cpeMatch"`
+	}{{CPEMatch: []struct {
+		Criteria string `json:"criteria"`
+	}{{Criteria: "cpe:2.3:a:openssl:openssl:3.0.0:*:*:*:*:*:*:*"}}}}}}
+
+	srv := svrWithSinglePage(cveItem)
+	defer srv.Close()
+
+	db := testutil.NewTestDB(t)
+	client := newTestClient(srv.URL)
+
+	var notified bool
+	syncer := NewSyncer(db, client, func(_ context.Context, _ string) { notified = true })
+
+	db.Exec("INSERT INTO actors (id, display_name, kind, created_at) VALUES (?, ?, ?, datetime('now'))",
+		"actor-3", "Test Agent 3", "agent")
+	// Watch created AFTER the CVE's published date — should produce no hits.
+	db.Exec("INSERT INTO cve_watches (id, actor_id, vendor_product, created_at) VALUES (?, ?, ?, ?)",
+		"watch-3", "actor-3", "openssl", "2025-01-01T00:00:00Z")
+
+	if err := syncer.RunInitialLoad(context.Background()); err != nil {
+		t.Fatalf("RunInitialLoad: %v", err)
+	}
+	if notified {
+		t.Error("notifier must not fire for CVEs published before the watch was created")
+	}
+}
+
+func TestCPEVendorProducts(t *testing.T) {
+	cases := []struct {
+		cpes string
+		want []string
+	}{
+		{"", nil},
+		{"cpe:2.3:a:openssl:openssl:3.0.0:*:*:*:*:*:*:*", []string{"openssl openssl"}},
+		{
+			"cpe:2.3:a:openssl:openssl:3.0.0:*:*:*:*:*:*:* cpe:2.3:a:lua-openssl_project:lua-openssl:0.7.7-1:*:*:*:*:*:*:*",
+			[]string{"openssl openssl", "lua-openssl_project lua-openssl"},
+		},
+		{"cpe:2.3:a:apache:struts:2.5.33:*:*:*:*:*:*:*", []string{"apache struts"}},
+	}
+	for _, c := range cases {
+		got := cpeVendorProducts(c.cpes)
+		if len(got) != len(c.want) {
+			t.Errorf("cpeVendorProducts(%q) = %v, want %v", c.cpes, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("cpeVendorProducts(%q)[%d] = %q, want %q", c.cpes, i, got[i], c.want[i])
+			}
+		}
+	}
 }

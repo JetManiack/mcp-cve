@@ -15,7 +15,7 @@ import (
 // --- watch_product ---
 
 type watchProductInput struct {
-	VendorProduct string `json:"vendor_product" jsonschema:"Vendor or product name to watch for new CVEs e.g. openssl or apache struts; matched as a case-insensitive substring of CPE strings"`
+	VendorProduct string `json:"vendor_product" jsonschema:"Vendor or product name to watch for new CVEs e.g. openssl or apache struts; matched as a case-insensitive substring of the CPE vendor and product fields so openssl also matches lua-openssl and curl also matches libcurl"`
 }
 
 type watchProductOutput struct {
