@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mcp-cve admin</title>
+<style>
+:root {
+  --bg: #f8f9fa;
+  --fg: #212529;
+  --card: #fff;
+  --border: #dee2e6;
+  --accent: #0d6efd;
+  --muted: #6c757d;
+  --ok: #198754;
+  --warn: #ffc107;
+  --danger: #dc3545;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1b1e;
+    --fg: #e9ecef;
+    --card: #242528;
+    --border: #3a3b3e;
+    --accent: #4e9bff;
+    --muted: #9ba3ad;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header { background: var(--card); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; }
+header h1 { margin: 0; font-size: 1.25rem; }
+main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; display: grid; gap: 1.5rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; }
+.card h2 { margin: 0 0 1rem; font-size: 1rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; }
+.kv dt { color: var(--muted); font-size: .875rem; }
+.kv dd { margin: 0; font-size: .875rem; font-family: monospace; }
+table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+th { text-align: left; border-bottom: 2px solid var(--border); padding: .5rem .75rem; color: var(--muted); font-weight: 600; }
+td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+.badge { display: inline-block; padding: .15em .5em; border-radius: 4px; font-size: .75em; font-weight: 600; }
+.badge-ok   { background: #d1e7dd; color: #0a3622; }
+.badge-warn { background: #fff3cd; color: #664d03; }
+.badge-muted{ background: var(--border); color: var(--muted); }
+button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: .4rem .9rem; cursor: pointer; font-size: .875rem; }
+button:hover { opacity: .85; }
+input[type=text] { border: 1px solid var(--border); border-radius: 6px; padding: .4rem .75rem; font-size: .875rem; background: var(--bg); color: var(--fg); width: 100%; }
+.row { display: flex; gap: .5rem; align-items: center; }
+#token-banner { margin-top: .75rem; padding: .75rem 1rem; border-radius: 6px; background: #d1e7dd; color: #0a3622; font-family: monospace; word-break: break-all; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>mcp-cve</h1>
+  <span id="me-name" style="margin-left:auto;font-size:.875rem;color:var(--muted)"></span>
+</header>
+<main>
+
+<div class="card" id="sync-card">
+  <h2>NVD Sync Status</h2>
+  <dl class="kv" id="sync-dl"><dt>loading…</dt><dd></dd></dl>
+</div>
+
+<div class="card" id="agents-card">
+  <h2>Agents</h2>
+  <div class="row" style="margin-bottom:.75rem">
+    <input type="text" id="new-name" placeholder="Display name">
+    <button onclick="createAgent()">Create</button>
+  </div>
+  <div id="token-banner" id="token-out"></div>
+  <table id="agents-table">
+    <thead><tr><th>Name</th><th>ID</th><th>Created</th><th>Token</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+</main>
+<script>
+async function api(path, opts) {
+  const r = await fetch('/api' + path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function loadMe() {
+  try {
+    const me = await api('/me');
+    document.getElementById('me-name').textContent = me.display_name + ' (' + me.role + ')';
+  } catch {}
+}
+
+async function loadSync() {
+  const dl = document.getElementById('sync-dl');
+  try {
+    const s = await api('/sync');
+    dl.innerHTML = `
+      <dt>Total CVEs</dt><dd>${s.total_cves.toLocaleString()}</dd>
+      <dt>Last full sync</dt><dd>${s.last_full_sync ? new Date(s.last_full_sync).toLocaleString() : 'pending…'}</dd>
+      <dt>Last incremental sync</dt><dd>${s.last_incremental_sync ? new Date(s.last_incremental_sync).toLocaleString() : '—'}</dd>
+    `;
+  } catch (e) {
+    dl.innerHTML = '<dt>Error</dt><dd>' + e.message + '</dd>';
+  }
+}
+
+async function loadAgents() {
+  const tbody = document.querySelector('#agents-table tbody');
+  try {
+    const agents = await api('/actors');
+    tbody.innerHTML = agents.map(a => `
+      <tr>
+        <td>${esc(a.display_name)}</td>
+        <td style="font-family:monospace;font-size:.8em">${a.id}</td>
+        <td>${new Date(a.created_at).toLocaleDateString()}</td>
+        <td><span class="badge ${a.has_active_token ? 'badge-ok' : 'badge-muted'}">${a.has_active_token ? 'active' : 'none'}</span></td>
+        <td>
+          <button onclick="issueToken('${a.id}')">Issue token</button>
+          <button onclick="deleteAgent('${a.id}')" style="background:#6c757d;margin-left:.25rem">Revoke all</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="5">' + e.message + '</td></tr>';
+  }
+}
+
+async function createAgent() {
+  const name = document.getElementById('new-name').value.trim();
+  if (!name) return;
+  await api('/actors', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({display_name: name}) });
+  document.getElementById('new-name').value = '';
+  loadAgents();
+}
+
+async function issueToken(id) {
+  const r = await api('/actors/' + id + '/credentials', { method: 'POST' });
+  const banner = document.getElementById('token-banner');
+  banner.textContent = 'New token (save it now — shown once): ' + r.token;
+  banner.style.display = 'block';
+}
+
+async function deleteAgent(id) {
+  if (!confirm('Revoke all credentials for this agent?')) return;
+  await api('/actors/' + id, { method: 'DELETE' });
+  loadAgents();
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+loadMe(); loadSync(); loadAgents();
+setInterval(loadSync, 60000);
+</script>
+</body>
+</html>

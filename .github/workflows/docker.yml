@@ -1,0 +1,109 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/jetmaniack/go-ai-cve
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        run: make test
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      # Build a local image and boot it to verify the binary actually starts
+      # and the MCP auth guard is wired in. `make test` only validates the Go
+      # build; this step proves the image that ships is healthy.
+      - name: Smoke test image
+        run: |
+          docker buildx build --load -t smoke-test:latest .
+          docker run -d --name smoke-test -p 18080:8080 smoke-test:latest --auth-stub
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:18080/livez >/dev/null && break
+            sleep 0.5
+          done
+          fail=0
+          for path in /livez /readyz /; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:18080$path")
+            echo "$path -> $code"
+            if [ "$code" != "200" ]; then
+              echo "::error::$path returned $code, want 200"
+              fail=1
+            fi
+          done
+          # /mcp must reject unauthenticated calls — a 200 here would mean
+          # bearer-token auth stopped being wired in.
+          mcp_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            "http://localhost:18080/mcp")
+          echo "/mcp (no token) -> $mcp_code"
+          if [ "$mcp_code" != "401" ]; then
+            echo "::error::/mcp returned $mcp_code without a token, want 401"
+            fail=1
+          fi
+          docker logs smoke-test
+          docker rm -f smoke-test
+          exit $fail
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

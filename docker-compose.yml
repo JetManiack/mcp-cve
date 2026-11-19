@@ -1,0 +1,17 @@
+services:
+  cve:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_DSN: data/cve.db
+      NVD_API_KEY: ""        # optional; set to increase rate limits
+      LISTEN_ADDR: ":8080"
+      # For local development without Keycloak:
+      # Pass --auth-stub as the CMD override or use the flag below.
+    volumes:
+      - cve-data:/data
+    command: ["--auth-stub"]
+
+volumes:
+  cve-data:
