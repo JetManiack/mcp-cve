@@ -284,6 +284,50 @@ func TestRunInitialLoad_ResumesFromCheckpoint(t *testing.T) {
 	}
 }
 
+func TestRunInitialLoad_PersistsCheckpoint(t *testing.T) {
+	// Two-page load. After completion full_load_progress must be 0 and
+	// last_full_sync must be set. This catches the bug where UpsertSyncState
+	// listed explicit columns and omitted full_load_progress, so the final
+	// reset to 0 was silently skipped.
+	page1 := PageResult{TotalResults: 4, StartIndex: 0, ResultsPerPage: 2,
+		Vulnerabilities: []CVEItem{minimalCVEItem("CVE-2024-P001"), minimalCVEItem("CVE-2024-P002")}}
+	page2 := PageResult{TotalResults: 4, StartIndex: 2, ResultsPerPage: 2,
+		Vulnerabilities: []CVEItem{minimalCVEItem("CVE-2024-P003"), minimalCVEItem("CVE-2024-P004")}}
+
+	srv := srvWithPages([]PageResult{page1, page2})
+	defer srv.Close()
+
+	syncer, _ := newTestSyncer(t, srv.URL)
+	if err := syncer.RunInitialLoad(context.Background()); err != nil {
+		t.Fatalf("RunInitialLoad: %v", err)
+	}
+
+	var progress int
+	row := syncer.db.Raw("SELECT full_load_progress FROM sync_states WHERE id = 1").Row()
+	if err := row.Scan(&progress); err != nil {
+		t.Fatalf("scan full_load_progress: %v", err)
+	}
+	if progress != 0 {
+		t.Errorf("full_load_progress: got %d, want 0 (must be reset after successful full load)", progress)
+	}
+
+	rows, err := syncer.db.Raw("SELECT last_full_sync FROM sync_states WHERE id = 1").Rows()
+	if err != nil {
+		t.Fatalf("query last_full_sync: %v", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("no sync_states row")
+	}
+	var lastFullSync *string
+	if err := rows.Scan(&lastFullSync); err != nil {
+		t.Fatalf("scan last_full_sync: %v", err)
+	}
+	if lastFullSync == nil {
+		t.Error("last_full_sync: not set after full load")
+	}
+}
+
 func svrWithSinglePage(item CVEItem) *httptest.Server {
 	return srvWithPages([]PageResult{buildPageResult([]CVEItem{item})})
 }

@@ -139,10 +139,8 @@ func UpsertSyncState(db *gorm.DB, state *SyncState) error {
 	state.ID = 1
 	state.UpdatedAt = time.Now()
 	return db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"last_full_sync", "last_incremental_sync", "total_cves", "updated_at",
-		}),
+		Columns:   []clause.Column{{Name: "id"}},
+		UpdateAll: true,
 	}).Create(state).Error
 }
 
