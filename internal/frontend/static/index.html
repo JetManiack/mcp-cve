@@ -80,6 +80,10 @@ input[type=text] { border: 1px solid var(--border); border-radius: 6px; padding:
 <script>
 async function api(path, opts) {
   const r = await fetch('/api' + path, opts);
+  if (r.status === 401) {
+    location.href = '/auth/login';
+    return new Promise(() => {});
+  }
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
