@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-//go:embed static/*
+//go:generate npm --prefix ../../web install
+//go:generate npm --prefix ../../web run build
+
+//go:embed all:static
 var assets embed.FS
 
 // Handler returns an http.Handler that serves the embedded admin UI.

@@ -17,6 +17,7 @@ func NewHandler(db *gorm.DB, provider humanauth.Provider) http.Handler {
 	r.Use(humanauth.RequireHumanAuth(db, provider))
 
 	r.Get("/sync", syncStateHandler(db))
+	r.Get("/cves", listCVEsHandler(db))
 
 	r.Route("/tool-calls", func(r chi.Router) {
 		r.Get("/", listHistoryHandler(db))

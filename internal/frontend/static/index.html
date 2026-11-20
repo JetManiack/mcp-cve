@@ -1,160 +1,86 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mcp-cve admin</title>
-<style>
-:root {
-  --bg: #f8f9fa;
-  --fg: #212529;
-  --card: #fff;
-  --border: #dee2e6;
-  --accent: #0d6efd;
-  --muted: #6c757d;
-  --ok: #198754;
-  --warn: #ffc107;
-  --danger: #dc3545;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1a1b1e;
-    --fg: #e9ecef;
-    --card: #242528;
-    --border: #3a3b3e;
-    --accent: #4e9bff;
-    --muted: #9ba3ad;
-  }
-}
-*, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
-header { background: var(--card); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; }
-header h1 { margin: 0; font-size: 1.25rem; }
-main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; display: grid; gap: 1.5rem; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; }
-.card h2 { margin: 0 0 1rem; font-size: 1rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; }
-.kv dt { color: var(--muted); font-size: .875rem; }
-.kv dd { margin: 0; font-size: .875rem; font-family: monospace; }
-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
-th { text-align: left; border-bottom: 2px solid var(--border); padding: .5rem .75rem; color: var(--muted); font-weight: 600; }
-td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); }
-tr:last-child td { border-bottom: none; }
-.badge { display: inline-block; padding: .15em .5em; border-radius: 4px; font-size: .75em; font-weight: 600; }
-.badge-ok   { background: #d1e7dd; color: #0a3622; }
-.badge-warn { background: #fff3cd; color: #664d03; }
-.badge-muted{ background: var(--border); color: var(--muted); }
-button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: .4rem .9rem; cursor: pointer; font-size: .875rem; }
-button:hover { opacity: .85; }
-input[type=text] { border: 1px solid var(--border); border-radius: 6px; padding: .4rem .75rem; font-size: .875rem; background: var(--bg); color: var(--fg); width: 100%; }
-.row { display: flex; gap: .5rem; align-items: center; }
-#token-banner { margin-top: .75rem; padding: .75rem 1rem; border-radius: 6px; background: #d1e7dd; color: #0a3622; font-family: monospace; word-break: break-all; display: none; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>mcp-cve</title>
+  <style>
+    :root {
+      --bg: #0b0f1a;
+      --surface: #131a2b;
+      --border: #232b40;
+      --text: #e7eaf2;
+      --text-dim: #8891a8;
+      --signal: #ffb454;
+      --credential: #5cc8ff;
+      --revoked: #4a5268;
+      --ok: #6bd68a;
+      --fail: #f2a6a6;
+      --font-display: ui-sans-serif, system-ui, sans-serif;
+      --font-body: ui-sans-serif, system-ui, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-body); }
+    .callout { background: #2a1414; border: 1px solid #5a2a2a; color: var(--fail); border-radius: 6px; padding: .6rem .8rem; margin-bottom: 1rem; font-size: 13px; }
+    .empty-state { padding: 3rem 1rem; text-align: center; color: var(--text-dim); }
+    .transmission { background: #0a0d16; border: 1px solid var(--credential); border-radius: 6px; padding: .7rem .9rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+    .transmission .label { color: var(--credential); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .transmission code { font: 400 13px var(--font-mono); color: var(--text); word-break: break-all; }
+    button { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: .5rem .9rem; font: 500 13px/1 var(--font-body); cursor: pointer; }
+    button:hover { border-color: var(--credential); }
+    button.primary { background: var(--signal); color: #201404; border-color: var(--signal); font-weight: 600; }
+    button.primary:hover { filter: brightness(1.08); }
+    button:disabled { opacity: .5; cursor: default; }
+    input, select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: inherit; padding: .45rem .6rem; }
+    input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--credential); outline-offset: 1px; }
+    .filter-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .filter-bar .grow { flex: 1; min-width: 160px; }
+    .call-list { display: flex; flex-direction: column; gap: .4rem; }
+    .call-row { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 8px; padding: .6rem .9rem; }
+    .call-row .metric { font: 400 11px var(--font-mono); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .load-more { display: block; margin: 1rem auto 0; }
+    .dispatch-bar { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
+    .dispatch-bar input { flex: 1; }
+    .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .9rem; }
+    .agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1rem; }
+    .agent-card .beacon-row { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; }
+    .beacon { width: 8px; height: 8px; border-radius: 50%; background: var(--revoked); flex-shrink: 0; }
+    .beacon.active { background: var(--signal); box-shadow: 0 0 0 0 rgba(255,180,84,.55); animation: pulse 2.2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,180,84,.45); } 70% { box-shadow: 0 0 0 6px rgba(255,180,84,0); } 100% { box-shadow: 0 0 0 0 rgba(255,180,84,0); } }
+    @media (prefers-reduced-motion: reduce) { .beacon.active { animation: none; } }
+    .agent-card .name { font: 600 15px var(--font-display); color: #fff; }
+    .agent-card .status-label { font-size: 11px; color: var(--revoked); margin-left: .1rem; }
+    .agent-card .status-label.active { color: var(--signal); }
+    .agent-card .agent-id { display: block; font: 400 11px var(--font-mono); color: var(--text-dim); margin-bottom: .7rem; word-break: break-all; }
+    .agent-card .actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .agent-card .actions button { font-size: 12px; padding: .35rem .6rem; }
+    .token-list { list-style: none; margin: .7rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+    .token-list li { display: flex; align-items: center; gap: .5rem; font: 400 11px var(--font-mono); color: var(--text-dim); }
+    .token-list li .revoked { color: var(--revoked); }
+    .token-list li button { font-size: 11px; padding: .2rem .45rem; }
+    .app-layout { display: flex; min-height: 100vh; }
+    .sidebar { width: 200px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; background: #0d1220; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 1.2rem .8rem; gap: 0; }
+    .sidebar-brand { font: 600 15px/1 var(--font-display); color: #fff; padding: 0 .6rem 1.2rem; border-bottom: 1px solid var(--border); margin-bottom: .8rem; }
+    .sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: .2rem; }
+    .sidebar-link { display: block; color: var(--text-dim); text-decoration: none; font: 500 13px var(--font-body); padding: .45rem .6rem; border-radius: 6px; border: 1px solid transparent; }
+    .sidebar-link:hover { color: var(--text); background: var(--surface); }
+    .sidebar-link.active { background: var(--surface); color: var(--text); border-color: var(--border); }
+    .sidebar-user { margin-top: auto; padding-top: .8rem; border-top: 1px solid var(--border); }
+    .sidebar-user-name { display: block; font-size: 12px; color: var(--text-dim); padding: 0 .6rem .4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-logout { background: transparent; border: none; color: var(--text-dim); font: 500 12px var(--font-body); cursor: pointer; padding: .3rem .6rem; width: 100%; text-align: left; border-radius: 6px; }
+    .sidebar-logout:hover { color: var(--text); background: var(--surface); }
+    .content-area { flex: 1; min-width: 0; overflow-x: hidden; }
+    main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+    h2.section-title { font: 600 20px/1.2 var(--font-display); margin: 0 0 1rem; color: #fff; }
+    .page-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; }
+    .page-header .section-title { margin-bottom: 0; }
+    .page-header .count { font: 500 12px/1 var(--font-mono); color: var(--text-dim); }
+    @media (max-width: 640px) { .sidebar { display: none; } }
+  </style>
 </head>
 <body>
-<header>
-  <h1>mcp-cve</h1>
-  <span id="me-name" style="margin-left:auto;font-size:.875rem;color:var(--muted)"></span>
-</header>
-<main>
-
-<div class="card" id="sync-card">
-  <h2>NVD Sync Status</h2>
-  <dl class="kv" id="sync-dl"><dt>loading…</dt><dd></dd></dl>
-</div>
-
-<div class="card" id="agents-card">
-  <h2>Agents</h2>
-  <div class="row" style="margin-bottom:.75rem">
-    <input type="text" id="new-name" placeholder="Display name">
-    <button onclick="createAgent()">Create</button>
-  </div>
-  <div id="token-banner" id="token-out"></div>
-  <table id="agents-table">
-    <thead><tr><th>Name</th><th>ID</th><th>Created</th><th>Token</th><th></th></tr></thead>
-    <tbody></tbody>
-  </table>
-</div>
-
-</main>
-<script>
-async function api(path, opts) {
-  const r = await fetch('/api' + path, opts);
-  if (r.status === 401) {
-    location.href = '/auth/login';
-    return new Promise(() => {});
-  }
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-async function loadMe() {
-  try {
-    const me = await api('/me');
-    document.getElementById('me-name').textContent = me.display_name + ' (' + me.role + ')';
-  } catch {}
-}
-
-async function loadSync() {
-  const dl = document.getElementById('sync-dl');
-  try {
-    const s = await api('/sync');
-    dl.innerHTML = `
-      <dt>Total CVEs</dt><dd>${s.total_cves.toLocaleString()}</dd>
-      <dt>Last full sync</dt><dd>${s.last_full_sync ? new Date(s.last_full_sync).toLocaleString() : 'pending…'}</dd>
-      <dt>Last incremental sync</dt><dd>${s.last_incremental_sync ? new Date(s.last_incremental_sync).toLocaleString() : '—'}</dd>
-    `;
-  } catch (e) {
-    dl.innerHTML = '<dt>Error</dt><dd>' + e.message + '</dd>';
-  }
-}
-
-async function loadAgents() {
-  const tbody = document.querySelector('#agents-table tbody');
-  try {
-    const agents = await api('/actors');
-    tbody.innerHTML = agents.map(a => `
-      <tr>
-        <td>${esc(a.display_name)}</td>
-        <td style="font-family:monospace;font-size:.8em">${a.id}</td>
-        <td>${new Date(a.created_at).toLocaleDateString()}</td>
-        <td><span class="badge ${a.has_active_token ? 'badge-ok' : 'badge-muted'}">${a.has_active_token ? 'active' : 'none'}</span></td>
-        <td>
-          <button onclick="issueToken('${a.id}')">Issue token</button>
-          <button onclick="deleteAgent('${a.id}')" style="background:#6c757d;margin-left:.25rem">Revoke all</button>
-        </td>
-      </tr>
-    `).join('');
-  } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="5">' + e.message + '</td></tr>';
-  }
-}
-
-async function createAgent() {
-  const name = document.getElementById('new-name').value.trim();
-  if (!name) return;
-  await api('/actors', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({display_name: name}) });
-  document.getElementById('new-name').value = '';
-  loadAgents();
-}
-
-async function issueToken(id) {
-  const r = await api('/actors/' + id + '/credentials', { method: 'POST' });
-  const banner = document.getElementById('token-banner');
-  banner.textContent = 'New token (save it now — shown once): ' + r.token;
-  banner.style.display = 'block';
-}
-
-async function deleteAgent(id) {
-  if (!confirm('Revoke all credentials for this agent?')) return;
-  await api('/actors/' + id, { method: 'DELETE' });
-  loadAgents();
-}
-
-function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-loadMe(); loadSync(); loadAgents();
-setInterval(loadSync, 60000);
-</script>
+  <div id="root"></div>
+  <script src="/js/app.bundle.js"></script>
 </body>
 </html>

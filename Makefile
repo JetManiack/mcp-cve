@@ -17,8 +17,15 @@ help: ## Show this help message
 	@echo "Available targets:" && echo && \
 	awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z0-9_\-]+:.*?## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
 
+.PHONY: generate frontend
+generate: ## Generate the frontend bundle (npm install + build via esbuild)
+	@command -v esbuild >/dev/null 2>&1 || npm --prefix web install
+	go generate ./internal/frontend/...
+
+frontend: generate ## Alias for generate
+
 .PHONY: build
-build: ## Build the binary into bin/mcp-cve
+build: generate ## Build the binary into bin/mcp-cve
 	@mkdir -p $(BIN_DIR)
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $(BIN_DIR)/$(BINARY) $(CMD_DIR)
 
@@ -81,6 +88,7 @@ tidy: ## Tidy go.mod/go.sum
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)
+	rm -f internal/frontend/static/js/app.bundle.js
 
 .PHONY: docker
 docker: ## Build the Docker image locally
