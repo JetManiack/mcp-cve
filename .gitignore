@@ -3,3 +3,5 @@ data/
 *.db
 *.db-shm
 *.db-wal
+web/node_modules/
+web/package-lock.json
